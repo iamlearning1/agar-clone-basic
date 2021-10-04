@@ -1,1 +1,3 @@
-const { app, io } = require('./server');
+const { app } = require('./server');
+
+require('./socket');
