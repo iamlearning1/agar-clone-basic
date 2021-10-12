@@ -14,12 +14,12 @@ const orbs = [];
 const players = [];
 
 const settings = {
-  defaultOrbs: 500,
+  defaultOrbs: 5000,
   defaultSpeed: 6,
   defaultSize: 6,
   defaultZoom: 1.5,
-  worldWidth: 500,
-  worldHeight: 500,
+  worldWidth: 5000,
+  worldHeight: 5000,
 };
 
 function initGame() {
@@ -29,6 +29,15 @@ function initGame() {
 }
 
 initGame();
+
+// issue a message to every connected socket 30 fps, every 33 milliseconds
+setInterval(() => {
+  if (players.length) {
+    io.to('game').emit('tock', {
+      players,
+    });
+  }
+}, 33);
 
 io.on('connect', (socket) => {
   let player = {};
@@ -42,8 +51,7 @@ io.on('connect', (socket) => {
 
     // issue a message to every connected socket 30 fps, every 33 milliseconds
     setInterval(() => {
-      socket.emit('tock', {
-        players,
+      socket.emit('tickTock', {
         playerX: player.playerData.locX,
         playerY: player.playerData.locY,
       });
@@ -76,5 +84,57 @@ io.on('connect', (socket) => {
       player.playerData.locX += speed * xV;
       player.playerData.locY -= speed * yV;
     }
+
+    const capturedOrb = checkForOrbCollisions(
+      player.playerData,
+      player.playerConfig,
+      orbs,
+      settings
+    );
+
+    capturedOrb
+      .then((data) => {
+        // emit to all sockets the orb to replace
+        const orbData = {
+          orbIndex: data,
+          newOrb: orbs[data],
+        };
+
+        io.sockets.emit('leaderboard', getLeaderboard());
+
+        io.sockets.emit('orbSwitch', orbData);
+      })
+      .catch(() => {
+        // console.log('no collision');
+      });
+
+    const playerDeath = checkForPlayerCollisions(
+      player.playerData,
+      player.playerConfig,
+      players,
+      player.socketId
+    );
+
+    playerDeath
+      .then((data) => {
+        io.sockets.emit('leaderboard', getLeaderboard());
+        io.sockets.emit('death', data);
+      })
+      .catch(() => {});
+  });
+
+  socket.on('disconnect', (data) => {
+    players = players.filter((p) => p.socketId !== player.socketId);
   });
 });
+
+function getLeaderboard() {
+  players.sort((a, b) => b.score - a.score);
+
+  return players.map((player) => {
+    return {
+      name: player.name,
+      score: player.score,
+    };
+  });
+}
